@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 
 from torch.utils.data import Dataset, DataLoader
 
+from langdetect import detect
 from emoji import demojize
 
 class SentimentAnalysisDataset(Dataset):
@@ -38,6 +39,12 @@ def get_data_location():
         return '/kaggle/input'
     else:
         return './datasets'
+    
+def detect_language(text: str) -> str:
+    try:
+        return detect(text)
+    except Exception:
+        return 'unknown'
 
 def load_sentiment_analysis_dataset() -> Tuple[DataLoader, DataLoader]:
     DATA_LOCATION = get_data_location() + '/sentiment_analysis_dataset/'
@@ -55,7 +62,8 @@ def load_sentiment_analysis_dataset() -> Tuple[DataLoader, DataLoader]:
         for line in f:
             label = 0 if line.split()[0] == '__label__1' else 1
             content = ' '.join(line.split()[1:])
-            test_df = test_df.append({'Content': content, 'Label': label}, ignore_index = True)
+            language = detect_language(content) # we need to filter out the reviews that are not in English
+            test_df = test_df.append({'Content': content, 'Label': label}, ignore_index = True) if language == 'en' else test_df
 
     test_df['Content'] = test_df['Content'].apply(demojize)
     
