@@ -121,8 +121,14 @@ class MultitaskLearner(nn.Module):
     
 def main():
     sa_train_dataloader, sa_test_dataloader = load_sentiment_analysis_dataset()
+    print("Sentiment analysis data loaded")
     hs_train_dataloader, hs_test_dataloader = load_hate_speech_dataset()
-    print('All data loaded')
+    print('Hate speech data loaded')
+    multitask_learner = MultitaskLearner(sa_train_dataloader, sa_test_dataloader, hs_train_dataloader, hs_test_dataloader, 2, 2)
+    multitask_learner.train()
+    print("Training complete")
+    multitask_learner.predict_sentiment_analysis(sa_test_dataloader)
+    multitask_learner.predict_hate_speech(hs_test_dataloader)
 
 if __name__ == '__main__':
     main()

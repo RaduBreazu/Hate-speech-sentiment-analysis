@@ -49,21 +49,32 @@ def detect_language(text: str) -> str:
 def load_sentiment_analysis_dataset() -> Tuple[DataLoader, DataLoader]:
     DATA_LOCATION = get_data_location() + '/sentiment_analysis_dataset/'
     train_df = pd.DataFrame(columns = ['Content', 'Label'])
-    with open(DATA_LOCATION + 'train.ft.txt', 'r') as f:
-        for line in f:
-            label = 0 if line.split()[0] == '__label__1' else 1
-            content = ' '.join(line.split()[1:])
-            train_df = train_df.append({'Content': content, 'Label': label}, ignore_index = True)
+    for file in os.listdir(DATA_LOCATION + 'train/pos'):
+        with open(DATA_LOCATION + 'train/pos/' + file, 'r') as f:
+            label = file.split('_')[1].split('.')[0]
+            content = f.read()
+            train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
+
+    for file in os.listdir(DATA_LOCATION + 'train/neg'):
+        with open(DATA_LOCATION + 'train/neg/' + file, 'r') as f:
+            label = file.split('_')[1].split('.')[0]
+            content = f.read()
+            train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
 
     train_df['Content'] = train_df['Content'].apply(demojize)
 
     test_df = pd.DataFrame(columns = ['Content', 'Label'])
-    with open(DATA_LOCATION + 'test.ft.txt', 'r') as f:
-        for line in f:
-            label = 0 if line.split()[0] == '__label__1' else 1
-            content = ' '.join(line.split()[1:])
-            language = detect_language(content) # we need to filter out the reviews that are not in English
-            test_df = test_df.append({'Content': content, 'Label': label}, ignore_index = True) if language == 'en' else test_df
+    for file in os.listdir(DATA_LOCATION + 'test/pos'):
+        with open(DATA_LOCATION + 'test/pos/' + file, 'r') as f:
+            label = file.split('_')[1].split('.')[0]
+            content = f.read()
+            train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
+
+    for file in os.listdir(DATA_LOCATION + 'test/neg'):
+        with open(DATA_LOCATION + 'test/neg/' + file, 'r') as f:
+            label = file.split('_')[1].split('.')[0]
+            content = f.read()
+            train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
 
     test_df['Content'] = test_df['Content'].apply(demojize)
     
@@ -75,7 +86,7 @@ def load_hate_speech_dataset() -> Tuple[DataLoader, DataLoader]:
     FILE = get_data_location() + '/hate_speech_dataset/HateSpeechDataset.csv'
     df = pd.read_csv(FILE)
     df = df.dropna().drop_duplicates()
-    df['text'] = df['text'].apply(demojize) # convert emojis to text
+    df['Content'] = df['Content'].apply(demojize) # convert emojis to text
     df = shuffle(df, random_state = 42) # randomly shuffle the dataset
     train_df, test_df = train_test_split(df, test_size = 0.2, random_state = 42) # split the dataset into training and testing sets
     train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = 128, shuffle = True)
