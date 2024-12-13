@@ -53,12 +53,22 @@ def load_sentiment_analysis_dataset() -> Tuple[DataLoader, DataLoader]:
         with open(DATA_LOCATION + 'train/pos/' + file, 'r') as f:
             label = file.split('_')[1].split('.')[0]
             content = f.read()
+            
+            index = content.find('Rating') # filter out the rating from the content
+            if index != -1:
+                content = content[:index]
+            
             train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
 
     for file in os.listdir(DATA_LOCATION + 'train/neg'):
         with open(DATA_LOCATION + 'train/neg/' + file, 'r') as f:
             label = file.split('_')[1].split('.')[0]
             content = f.read()
+
+            index = content.find('Rating') # filter out the rating from the content
+            if index != -1:
+                content = content[:index]
+
             train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
 
     train_df['Content'] = train_df['Content'].apply(demojize)
@@ -68,18 +78,28 @@ def load_sentiment_analysis_dataset() -> Tuple[DataLoader, DataLoader]:
         with open(DATA_LOCATION + 'test/pos/' + file, 'r') as f:
             label = file.split('_')[1].split('.')[0]
             content = f.read()
+
+            index = content.find('Rating') # filter out the rating from the content
+            if index != -1:
+                content = content[:index]
+            
             train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
 
     for file in os.listdir(DATA_LOCATION + 'test/neg'):
         with open(DATA_LOCATION + 'test/neg/' + file, 'r') as f:
             label = file.split('_')[1].split('.')[0]
             content = f.read()
+
+            index = content.find('Rating') # filter out the rating from the content
+            if index != -1:
+                content = content[:index]
+            
             train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': label}])], ignore_index = True)
 
     test_df['Content'] = test_df['Content'].apply(demojize)
     
-    train_dataloader = DataLoader(SentimentAnalysisDataset(train_df), batch_size = 128, shuffle = True)
-    test_dataloader = DataLoader(SentimentAnalysisDataset(test_df), batch_size = 128, shuffle = False)
+    train_dataloader = DataLoader(SentimentAnalysisDataset(train_df), batch_size = 32, shuffle = True)
+    test_dataloader = DataLoader(SentimentAnalysisDataset(test_df), batch_size = 32, shuffle = False)
     return train_dataloader, test_dataloader
 
 def load_hate_speech_dataset() -> Tuple[DataLoader, DataLoader]:

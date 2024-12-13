@@ -1,3 +1,5 @@
+import sys
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,6 +13,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from preprocess_data import *
+
+# Utility function for memory management on GPU
+def free_memory():
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    import gc
+    gc.collect()
 
 class MultitaskLearner(nn.Module):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -44,7 +54,7 @@ class MultitaskLearner(nn.Module):
         hate_speech_output = self.hate_speech_head(pooled_output)
         return sentiment_output, hate_speech_output
     
-    def encode(data : List[str]) -> Tuple[torch.tensor, torch.tensor]:
+    def encode(data) -> Tuple[torch.tensor, torch.tensor]:
         input_ids = []
         attention_mask = []
 
@@ -52,24 +62,27 @@ class MultitaskLearner(nn.Module):
             tokenized_text = MultitaskLearner.tokenizer.encode_plus(text,
                                                              add_special_tokens = True,
                                                              max_length = 512,
-                                                             pad_to_max_length = True,
+                                                             truncation = True,
+                                                             padding = 'max_length',
                                                              return_attention_mask = True,
                                                              return_tensors = 'pt')
             input_ids.append(tokenized_text['input_ids'])
             attention_mask.append(tokenized_text['attention_mask'])
 
-        return torch.tensor(input_ids, dtype = torch.long), torch.tensor(attention_mask, dtype = torch.long)
+        input_ids = torch.cat(input_ids, dim = 0)
+        attention_mask = torch.cat(attention_mask, dim = 0)
+        return input_ids, attention_mask
     
-    def train(self, num_epochs = 10):
+    def fit(self, num_epochs = 10):
         optimizer = optim.Adam(self.parameters(), lr = 1e-5)
         criterion = nn.CrossEntropyLoss()
 
         self.train()
-        for _ in range(num_epochs):
+        for i in range(num_epochs):
             # we cannot iterate simultaneously over the two datasets, since they do not have the same number of batches
-            for _, (X_sentiment, y_sentiment) in self.train_sentiment_analysis:
+            for X_sentiment, y_sentiment in self.train_sentiment_analysis:
                 input_ids, attention_mask = MultitaskLearner.encode(X_sentiment)
-                y_sentiment = y_sentiment.to(MultitaskLearner.device)
+                y_sentiment = torch.tensor(list(map(lambda x: int(x) - 1, y_sentiment))).to(MultitaskLearner.device)
 
                 optimizer.zero_grad()
                 sentiment_output, _ = self(input_ids, attention_mask)
@@ -77,9 +90,9 @@ class MultitaskLearner(nn.Module):
                 sentiment_loss.backward()
                 optimizer.step()
 
-            for _, (X_hate_speech, y_hate_speech) in self.train_hate_speech:
+            for X_hate_speech, y_hate_speech in self.train_hate_speech:
                 input_ids, attention_mask = MultitaskLearner.encode(X_hate_speech)
-                y_hate_speech = y_hate_speech.to(MultitaskLearner.device)
+                y_hate_speech = torch.tensor(list(map(lambda x: int(x) - 1, y_hate_speech))).to(MultitaskLearner.device)
 
                 optimizer.zero_grad()
                 _, hate_speech_output = self(input_ids, attention_mask)
@@ -87,16 +100,19 @@ class MultitaskLearner(nn.Module):
                 hate_speech_loss.backward()
                 optimizer.step()
 
+            print(f"Epoch {i + 1}/{epochs} completed.")
+            print(f'Sentiment training loss: {sentiment_loss.item()}, Hate speech training loss: {hate_speech_loss.item()}')
+
     def predict_sentiment_analysis(self, test_data : DataLoader):
         self.eval()
         sentiment_predictions = []
         true_values = []
         with torch.no_grad():
-            for _, (X_sentiment, y_sentiment) in test_data:
+            for X_sentiment, y_sentiment in test_data:
                 input_ids, attention_mask = MultitaskLearner.encode(X_sentiment)
                 sentiment_output, _ = self(input_ids, attention_mask)
                 sentiment_predictions.append(sentiment_output.argmax(dim = 1).cpu().numpy())
-                true_values.append(y_sentiment.numpy())
+                true_values.append(np.array(list(map(lambda x: int(x) - 1, y_sentiment))))
         
         predictions = np.concatenate(sentiment_predictions)
         print(classification_report(true_values, predictions))
@@ -107,11 +123,11 @@ class MultitaskLearner(nn.Module):
         self.eval()
 
         with torch.no_grad():
-            for _, (X_hate_speech, y_hate_speech) in test_data:
+            for X_hate_speech, y_hate_speech in test_data:
                 input_ids, attention_mask = MultitaskLearner.encode(X_hate_speech)
                 _, hate_speech_output = self(input_ids, attention_mask)
                 predictions.append(hate_speech_output.argmax(dim = 1).cpu().numpy())
-                true_values.append(y_hate_speech.numpy())
+                true_values.append(np.array(list(map(lambda x: int(x) - 1, y_hate_speech))))
                 
         precision = precision_score(true_values, predictions)
         recall = recall_score(true_values, predictions)
@@ -124,8 +140,8 @@ def main():
     print("Sentiment analysis data loaded")
     hs_train_dataloader, hs_test_dataloader = load_hate_speech_dataset()
     print('Hate speech data loaded')
-    multitask_learner = MultitaskLearner(sa_train_dataloader, sa_test_dataloader, hs_train_dataloader, hs_test_dataloader, 2, 2)
-    multitask_learner.train()
+    multitask_learner = MultitaskLearner(sa_train_dataloader, sa_test_dataloader, hs_train_dataloader, hs_test_dataloader, 10, 2)
+    multitask_learner.fit()
     print("Training complete")
     multitask_learner.predict_sentiment_analysis(sa_test_dataloader)
     multitask_learner.predict_hate_speech(hs_test_dataloader)
