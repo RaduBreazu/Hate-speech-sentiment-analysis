@@ -137,13 +137,13 @@ class MTLModule(pl.LightningModule):
         return loss_total
     def training_step(self,batch_dict,batch_idx):
         loss_total = self.compute_total_loss(batch_dict)
-        self.log("Train_loss",loss_total)
+        self.log("Train_loss",loss_total,batch_size=batch_size)
         return loss_total
     def validation_step(self,batch_dict,batch_idx):
         loss_total = self.compute_total_loss(batch_dict)
-        self.log("Test_loss",loss_total)
+        self.log("Test_loss",loss_total,batch_size=batch_size)
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(),lr=1e-6)
+        optimizer = torch.optim.AdamW(self.parameters(),lr=1e-5)
         return optimizer
 
 MTLlog = AimLogger(experiment="Teacher_model_train",train_metric_prefix="Train_",val_metric_prefix="Test_")
@@ -151,4 +151,3 @@ checkpoint_callback = pl.pytorch.callbacks.ModelCheckpoint(dirpath="Teacher_Mode
 pl_model = MTLModule(10,2)
 trainer = pl.Trainer(max_epochs=10,logger=MTLlog,callbacks=[checkpoint_callback],precision="bf16")
 trainer.fit(pl_model,trainLoader,testLoader)
-
