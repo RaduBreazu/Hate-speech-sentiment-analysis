@@ -8,7 +8,7 @@ from torch.utils.data import Dataset,DataLoader
 import pandas as pd
 from preprocess_data import load_sentiment_analysis_dataset,load_hate_speech_dataset
 import random
-from transformers import BertTokenizer, BertModel
+from transformers import BertTokenizer, BertModel, DistilBertModel
 import lightning as pl
 import torch.nn as nn
 import torch
@@ -96,7 +96,7 @@ testLoader = DataLoader(testParallelDataset,batch_size=batch_size,shuffle=False,
 # In[55]:
 
 
-class BertMultiTask(nn.Module):
+class TeacherBERTMultiTask(nn.Module):
     def __init__(self,num_sentiment_labels,num_hate_speech_labels):
         super().__init__()
         self.bert_model = BertModel.from_pretrained("bert-base-uncased",torch_dtype=torch.bfloat16)
@@ -125,7 +125,7 @@ torch.set_float32_matmul_precision("medium")
 class MTLModule(pl.LightningModule):
     def __init__(self,num_sentiment_labels,num_hate_speech_labels):
         super().__init__()
-        self.teacher_bert = BertMultiTask(num_sentiment_labels,num_hate_speech_labels)
+        self.teacher_bert = TeacherBERTMultiTask(num_sentiment_labels,num_hate_speech_labels)
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
     def compute_total_loss(self,batch_dict):
         sent_labels = torch.tensor(batch_dict["sent_labels"]).to(device)
@@ -137,11 +137,11 @@ class MTLModule(pl.LightningModule):
         return loss_total
     def training_step(self,batch_dict,batch_idx):
         loss_total = self.compute_total_loss(batch_dict)
-        self.log("Train_loss",loss_total,batch_size=batch_size)
+        self.log("Train_loss",loss_total,batch_size=batch_size,on_step=False,on_epoch=True)
         return loss_total
     def validation_step(self,batch_dict,batch_idx):
         loss_total = self.compute_total_loss(batch_dict)
-        self.log("Test_loss",loss_total,batch_size=batch_size)
+        self.log("Test_loss",loss_total,batch_size=batch_size,on_step=False,on_epoch=True)
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(),lr=1e-5)
         return optimizer
