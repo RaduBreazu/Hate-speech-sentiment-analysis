@@ -101,9 +101,11 @@ class BertMultiTask(nn.Module):
         super().__init__()
         self.bert_model = BertModel.from_pretrained("bert-base-uncased",torch_dtype=torch.bfloat16)
         self.sentiment_head = nn.Sequential(
+            nn.Dropout(p=0.1),
             nn.Linear(self.bert_model.config.hidden_size, num_sentiment_labels)
         )
         self.hate_speech_head = nn.Sequential(
+            nn.Dropout(p=0.1),
             nn.Linear(self.bert_model.config.hidden_size, num_hate_speech_labels)
         )
     def forward(self,batch_dict):
@@ -141,11 +143,12 @@ class MTLModule(pl.LightningModule):
         loss_total = self.compute_total_loss(batch_dict)
         self.log("Test_loss",loss_total)
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(),lr=1e-3)
+        optimizer = torch.optim.AdamW(self.parameters(),lr=1e-6)
         return optimizer
 
 MTLlog = AimLogger(experiment="Teacher_model_train",train_metric_prefix="Train_",val_metric_prefix="Test_")
+checkpoint_callback = pl.pytorch.callbacks.ModelCheckpoint(dirpath="Teacher_Model_CKPT")
 pl_model = MTLModule(10,2)
-trainer = pl.Trainer(max_epochs=10,logger=MTLlog,default_root_dir="Teacher_Model_CKPT",precision="bf16")
+trainer = pl.Trainer(max_epochs=10,logger=MTLlog,callbacks=[checkpoint_callback],precision="bf16")
 trainer.fit(pl_model,trainLoader,testLoader)
 
