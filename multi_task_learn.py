@@ -10,9 +10,12 @@ from sklearn.metrics import precision_score, recall_score, f1_score, classificat
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 from preprocess_data import *
+from aim import Run
+aim_run = Run(experiment="Multi-task-learning-HS-SentAnalysis")
+
 
 # Utility function for memory management on GPU
 def free_memory():
@@ -80,23 +83,25 @@ class MultitaskLearner(nn.Module):
         self.train()
         for i in range(num_epochs):
             # we cannot iterate simultaneously over the two datasets, since they do not have the same number of batches
-            for X_sentiment, y_sentiment in self.train_sentiment_analysis:
+            """for X_sentiment, y_sentiment in self.train_sentiment_analysis:
                 input_ids, attention_mask = MultitaskLearner.encode(X_sentiment)
                 y_sentiment = torch.tensor(list(map(lambda x: int(x) - 1, y_sentiment))).to(MultitaskLearner.device)
 
                 optimizer.zero_grad()
                 sentiment_output, _ = self(input_ids, attention_mask)
                 sentiment_loss = criterion(sentiment_output, y_sentiment)
+                aim_run.track(sentiment_loss,name="sentiment_train_loss")
                 sentiment_loss.backward()
-                optimizer.step()
+                optimizer.step()"""
 
             for X_hate_speech, y_hate_speech in self.train_hate_speech:
                 input_ids, attention_mask = MultitaskLearner.encode(X_hate_speech)
-                y_hate_speech = torch.tensor(list(map(lambda x: int(x) - 1, y_hate_speech))).to(MultitaskLearner.device)
+                y_hate_speech = torch.tensor(list(map(lambda x: int(x), y_hate_speech))).to(MultitaskLearner.device)
 
                 optimizer.zero_grad()
                 _, hate_speech_output = self(input_ids, attention_mask)
                 hate_speech_loss = criterion(hate_speech_output, y_hate_speech)
+                print(f"Current hate_speech_loss={hate_speech_loss}")
                 hate_speech_loss.backward()
                 optimizer.step()
 

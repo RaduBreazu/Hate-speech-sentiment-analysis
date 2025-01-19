@@ -13,6 +13,14 @@ import lightning as pl
 import torch.nn as nn
 import torch
 from aim.pytorch_lightning import AimLogger
+from torchmetrics.classification import MulticlassAccuracy,MulticlassF1Score
+import transformers
+import math
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+acc_sent = MulticlassAccuracy(num_classes=10).to(device)
+acc_hate = MulticlassAccuracy(num_classes=2).to(device)
+f1_sent = MulticlassF1Score(num_classes=10).to(device)
+f1_hate = MulticlassF1Score(num_classes=2).to(device)
 
 
 # In[3]:
@@ -36,28 +44,6 @@ class HateSpeechSentAnalysis(Dataset):
         return self.size
 
 
-# In[5]:
-
-
-train_sent,test_sent = load_sentiment_analysis_dataset()
-train_hate,test_hate = load_hate_speech_dataset()
-
-
-# In[37]:
-
-
-reduced_HS_train = train_hate.sample(n=train_sent.shape[0],random_state=42)
-reduced_HS_test = test_hate.sample(n=test_sent.shape[0],random_state=42)
-trainParallelDataset = HateSpeechSentAnalysis(reduced_HS_train,train_sent)
-testParallelDataset = HateSpeechSentAnalysis(reduced_HS_test,test_sent)
-
-
-# In[38]:
-
-
-# In[39]:
-
-
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 def collator(dict_list):
     result_dict={
@@ -77,36 +63,17 @@ def collator(dict_list):
     return result_dict
 
 
-# In[54]:
-
-
-seed_value=42
-pl.seed_everything(seed_value)
-batch_size = 16
-trainLoader = DataLoader(trainParallelDataset,batch_size=batch_size,shuffle=True,collate_fn=collator)
-testLoader = DataLoader(testParallelDataset,batch_size=batch_size,shuffle=False,collate_fn=collator)
-
-
-# In[ ]:
-
-
-
-
-
-# In[55]:
-
-
 class TeacherBERTMultiTask(nn.Module):
     def __init__(self,num_sentiment_labels,num_hate_speech_labels):
         super().__init__()
         self.bert_model = BertModel.from_pretrained("bert-base-uncased",torch_dtype=torch.bfloat16)
         self.sentiment_head = nn.Sequential(
-            nn.Dropout(p=0.1),
-            nn.Linear(self.bert_model.config.hidden_size, num_sentiment_labels)
+            nn.Dropout(p=0.2),
+            nn.Linear(self.bert_model.config.hidden_size, num_sentiment_labels,dtype=torch.bfloat16)
         )
         self.hate_speech_head = nn.Sequential(
-            nn.Dropout(p=0.1),
-            nn.Linear(self.bert_model.config.hidden_size, num_hate_speech_labels)
+            nn.Dropout(p=0.2),
+            nn.Linear(self.bert_model.config.hidden_size, num_hate_speech_labels,dtype=torch.bfloat16)
         )
     def forward(self,batch_dict):
         tokenized_hate = batch_dict["tokenized_hate_content"]
@@ -120,34 +87,66 @@ class TeacherBERTMultiTask(nn.Module):
 
 # In[56]:
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-torch.set_float32_matmul_precision("medium")
+batch_size = 16
+num_epochs=10
 class MTLModule(pl.LightningModule):
-    def __init__(self,num_sentiment_labels,num_hate_speech_labels):
+    def __init__(self,num_sentiment_labels,num_hate_speech_labels,dataloader_len):
         super().__init__()
+        self.save_hyperparameters()
         self.teacher_bert = TeacherBERTMultiTask(num_sentiment_labels,num_hate_speech_labels)
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
-    def compute_total_loss(self,batch_dict):
+        #self.automatic_optimization = False
+        self.dataloader_len = dataloader_len
+    def compute_metrics(self,y_hat_sent,sent_labels,y_hat_hate,hate_labels,mode):
+        self.log(f"{mode}_accuracy_sent",acc_sent(y_hat_sent,sent_labels),batch_size=batch_size,on_step=False,on_epoch=True)
+        self.log(f"{mode}_accuracy_hate",acc_hate(y_hat_hate,hate_labels),batch_size=batch_size,on_step=False,on_epoch=True)
+        self.log(f"{mode}_f1_sent",f1_sent(y_hat_sent,sent_labels),batch_size=batch_size,on_step=False,on_epoch=True)
+        self.log(f"{mode}_f1_hate",f1_hate(y_hat_hate,hate_labels),batch_size=batch_size,on_step=False,on_epoch=True)
+    def compute_total_loss(self,batch_dict,mode):
         sent_labels = torch.tensor(batch_dict["sent_labels"]).to(device)
         hate_labels = torch.tensor(batch_dict["hate_labels"]).to(device)
         y_hat_sent,y_hat_hate = self.teacher_bert(batch_dict)
+        self.compute_metrics(y_hat_sent,sent_labels,y_hat_hate,hate_labels,mode)
         loss_sent = self.loss_fn(y_hat_sent,sent_labels)
         loss_hate = self.loss_fn(y_hat_hate,hate_labels)
         loss_total = loss_sent+loss_hate
         return loss_total
     def training_step(self,batch_dict,batch_idx):
-        loss_total = self.compute_total_loss(batch_dict)
+        #opt = self.optimizers()
+        #sch = self.lr_schedulers()
+        #opt.zero_grad()
+        loss_total = self.compute_total_loss(batch_dict,"Train")
+        #self.manual_backward(loss_total)
+        #opt.step()
         self.log("Train_loss",loss_total,batch_size=batch_size,on_step=False,on_epoch=True)
         return loss_total
     def validation_step(self,batch_dict,batch_idx):
-        loss_total = self.compute_total_loss(batch_dict)
+        loss_total = self.compute_total_loss(batch_dict,"Test")
         self.log("Test_loss",loss_total,batch_size=batch_size,on_step=False,on_epoch=True)
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(),lr=1e-5)
+        #optimizer = torch.optim.SGD(self.parameters(),lr=1e-2,momentum=0.9,weight_decay=0.01)
+        optimizer = torch.optim.AdamW(self.parameters(),lr=1e-4,weight_decay=1e-2)
+        #scheduler = transformers.get_linear_schedule_with_warmup(optimizer,500,self.dataloader_len*num_epochs)
         return optimizer
+        #return [optimizer],[scheduler]
 
-MTLlog = AimLogger(experiment="Teacher_model_train",train_metric_prefix="Train_",val_metric_prefix="Test_")
-checkpoint_callback = pl.pytorch.callbacks.ModelCheckpoint(dirpath="Teacher_Model_CKPT")
-pl_model = MTLModule(10,2)
-trainer = pl.Trainer(max_epochs=10,logger=MTLlog,callbacks=[checkpoint_callback],precision="bf16")
-trainer.fit(pl_model,trainLoader,testLoader)
+if __name__=='__main__':
+    
+    train_sent,test_sent = pd.read_csv("sent_train.csv"),pd.read_csv("sent_test.csv")
+    train_hate,test_hate = pd.read_csv("HS_train.csv"),pd.read_csv("HS_test.csv")
+    train_sent.fillna(value="",inplace=True)
+    test_sent.fillna(value="",inplace=True)
+    trainParallelDataset = HateSpeechSentAnalysis(train_hate,train_sent)
+    testParallelDataset = HateSpeechSentAnalysis(test_hate,test_sent)
+
+    seed_value=42
+    pl.seed_everything(seed_value)
+    
+    trainLoader = DataLoader(trainParallelDataset,batch_size=batch_size,shuffle=True,collate_fn=collator)
+    testLoader = DataLoader(testParallelDataset,batch_size=batch_size,shuffle=False,collate_fn=collator)
+
+    MTLlog = AimLogger(experiment="Teacher_model_train",train_metric_prefix="Train_",val_metric_prefix="Test_")
+    checkpoint_callback = pl.pytorch.callbacks.ModelCheckpoint(dirpath="Teacher_Model_CKPT")
+    pl_model = MTLModule(10,2,math.ceil(len(trainParallelDataset)/batch_size))
+    trainer = pl.Trainer(max_epochs=num_epochs,logger=MTLlog,callbacks=[checkpoint_callback])
+    trainer.fit(pl_model,trainLoader,testLoader)

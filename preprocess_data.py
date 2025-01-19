@@ -17,16 +17,13 @@ from tqdm import tqdm
 
 
 def text_cleanup(text:str):
+    text = text.lower()
     text = demojize(text)
-    text = re.sub(r"<[A-Za-z0-9 /;:\"]*>",r" ",text)
-    text = re.sub(r"([a-zA-Z0-9])\(",r"\1 (",text)
-    text = re.sub(r"[*#@]","",text)
+    text = re.sub(r"<[a-z0-9 /;:\"]*>",r" ",text)
+    text = re.sub(r"([a-z0-9])\(",r"\1 (",text)
     text = re.sub(r"(\. ){2,}",r". ",text)
     text = re.sub(r"(\- ){2,}",r"",text)
-    text = re.sub(r"[^a-zA-Z0-9.,;:\"' ()\-,!?/]",r" ",text)
-    text = re.sub(r"([a-zA-Z0-9]) {1,}([.,;:\"\-])",r"\1\2",text)
-    text = re.sub(r"([a-zA-Z0-9])([\"])([a-zA-Z0-9])",r"\1 \2\3",text)
-    text = re.sub(r"([a-zA-Z])- ",r"\1 - ",text)
+    text = re.sub(r"[^a-z0-9.,;:\"' ()\-,!?/]",r" ",text)
     text = re.sub(r" {2,}",r" ",text)
     return text
 
@@ -122,3 +119,17 @@ def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
     #train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = 128, shuffle = True)
     #test_dataloader = DataLoader(HateSpeechDataset(test_df), batch_size = 128, shuffle = False)
     return train_df,test_df
+
+if __name__=='__main__':
+    train_sent,test_sent = load_sentiment_analysis_dataset()
+    train_hate,test_hate = load_hate_speech_dataset()
+    train_sent.dropna(inplace=True)
+    test_sent.dropna(inplace=True)
+    train_hate.dropna(inplace=True)
+    test_hate.dropna(inplace=True)
+    reduced_HS_train = train_hate.sample(n=len(train_sent),random_state=42)
+    reduced_HS_test = test_hate.sample(n=len(test_sent),random_state=42)
+    reduced_HS_train.to_csv("HS_train.csv")
+    reduced_HS_test.to_csv("HS_test.csv")
+    train_sent.to_csv("sent_train.csv")
+    test_sent.to_csv("sent_test.csv")
