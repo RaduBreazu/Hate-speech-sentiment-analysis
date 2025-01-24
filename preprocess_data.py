@@ -1,4 +1,5 @@
 import os
+import string
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -11,7 +12,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 
 from fast_langdetect import detect
-from emoji import demojize
+from emoji import demojize, replace_emoji
+import wordninja # source: https://stackoverflow.com/questions/8870261/how-to-split-text-without-spaces-into-list-of-words
 import re
 from tqdm import tqdm
 
@@ -25,6 +27,25 @@ def text_cleanup(text:str):
     text = re.sub(r"(\- ){2,}",r"",text)
     text = re.sub(r"[^a-z0-9.,;:\"' ()\-,!?/]",r" ",text)
     text = re.sub(r" {2,}",r" ",text)
+    return text
+
+def text_cleanup_hate_speech(text : str) -> str:
+    text = replace_emoji(text, replace = "<emoticon>")
+    text = re.sub(r"[+-]?[1-9][0-9]*\.[0-9]*", r"<number>", text) # replace numbers with <number>
+    text = re.sub(r"@\w+", r"<user>", text) # usernames begin with @
+    text = re.sub(r"#(\w+)", r"<hashtag> \1", text) # hashtags begin with #
+    text = text.sub(r"(\w)\1{2,}", r"\1", text) # remove repeated characters (naive implementation)
+    text = text.translate(str.maketrans('', '', string.punctuation)) # remove punctuation
+    text = text.lower() # convert text to lowercase
+    
+    lst = text.split()
+    for i in range(len(lst)):
+        if any(lst[i].startswith(x) for x in ['http', 'https', 'www']):
+            lst[i] = "<url>"
+
+    text = " ".join(lst)
+    text = " ".join(wordninja.split(text)) # tokenize words that are not separated by spaces
+    text = text.strip() # remove leading and trailing whitespaces
     return text
 
 class SentimentAnalysisDataset(Dataset):
@@ -47,7 +68,7 @@ class HateSpeechDataset(Dataset):
     
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
-        return row['Content'], row['Label']
+        return row['tweet'], row['class'] # on the dataset that we had before: row['Content'], row['Label']
 
 def get_data_location():
     if os.getcwd() == '/kaggle/working':
@@ -109,6 +130,7 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
     
     return train_df,test_df
 
+"""
 def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
     FILE = get_data_location() + '/hate_speech_dataset/HateSpeechDataset.csv'
     df = pd.read_csv(FILE)
@@ -119,6 +141,18 @@ def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
     #train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = 128, shuffle = True)
     #test_dataloader = DataLoader(HateSpeechDataset(test_df), batch_size = 128, shuffle = False)
     return train_df,test_df
+"""
+
+def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    FILE = get_data_location() + '/hate_speech_dataset/data/labeled_data.csv'
+    df = pd.read_csv(FILE)
+    df = df.drop(columns = ['count', 'hate_speech', 'offensive_language', 'neither']).dropna().drop_duplicates()
+    df['tweet'] = df['tweet'].apply(text_cleanup_hate_speech) # preprocess the text in every tweet
+    df = shuffle(df, random_state = 42) # randomly shuffle the dataset
+    train_df, test_df = train_test_split(df, test_size = 0.2, random_state = 42) # split the dataset into training and testing sets
+    train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = 128, shuffle = True)
+    test_dataloader = DataLoader(HateSpeechDataset(test_df), batch_size = 128, shuffle = False)
+    return train_dataloader, test_dataloader
 
 if __name__=='__main__':
     train_sent,test_sent = load_sentiment_analysis_dataset()
