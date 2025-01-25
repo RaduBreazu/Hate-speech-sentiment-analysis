@@ -34,7 +34,7 @@ def text_cleanup_hate_speech(text : str) -> str:
     text = re.sub(r"[+-]?[1-9][0-9]*\.[0-9]*", r"<number>", text) # replace numbers with <number>
     text = re.sub(r"@\w+", r"<user>", text) # usernames begin with @
     text = re.sub(r"#(\w+)", r"<hashtag> \1", text) # hashtags begin with #
-    text = text.sub(r"(\w)\1{2,}", r"\1", text) # remove repeated characters (naive implementation)
+    text = re.sub(r"(\w)\1{2,}", r"\1", text) # remove repeated characters (naive implementation)
     text = text.translate(str.maketrans('', '', string.punctuation)) # remove punctuation
     text = text.lower() # convert text to lowercase
     
@@ -88,7 +88,7 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
             if index != -1:
                 content = content[:index]
             if(detect(content)["lang"]=="en"):
-                train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': int(label)-1}])], ignore_index = True)
+                train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': 1}])], ignore_index = True)
 
     for file in tqdm(os.listdir(DATA_LOCATION + 'train/neg'),desc="Train_neg_load"):
         with open(DATA_LOCATION + 'train/neg/' + file, 'r') as f:
@@ -99,7 +99,7 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
             if index != -1:
                 content = content[:index]
             if(detect(content)["lang"]=="en"):
-                train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': int(label)-1}])], ignore_index = True)
+                train_df = pd.concat([train_df, pd.DataFrame([{'Content': content, 'Label': 0}])], ignore_index = True)
 
     train_df['Content'] = train_df['Content'].apply(text_cleanup)
 
@@ -113,7 +113,7 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
             if index != -1:
                 content = content[:index]
             if(detect(content)["lang"]=="en"):
-                test_df = pd.concat([test_df, pd.DataFrame([{'Content': content, 'Label': int(label)-1}])], ignore_index = True)
+                test_df = pd.concat([test_df, pd.DataFrame([{'Content': content, 'Label': 1}])], ignore_index = True)
 
     for file in tqdm(os.listdir(DATA_LOCATION + 'test/neg'),desc="Test_neg_load"):
         with open(DATA_LOCATION + 'test/neg/' + file, 'r') as f:
@@ -124,11 +124,12 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
             if index != -1:
                 content = content[:index]
             if(detect(content)["lang"]=="en"):
-                test_df = pd.concat([test_df, pd.DataFrame([{'Content': content, 'Label': int(label)-1}])], ignore_index = True)
+                test_df = pd.concat([test_df, pd.DataFrame([{'Content': content, 'Label': 0}])], ignore_index = True)
 
     test_df['Content'] = test_df['Content'].apply(text_cleanup)
-    
-    return train_df,test_df
+    train_loader = DataLoader(SentimentAnalysisDataset(train_df),batch_size=16,shuffle=True)
+    test_loader = DataLoader(SentimentAnalysisDataset(test_df),batch_size=16,shuffle=False)
+    return train_loader,test_loader
 
 """
 def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -150,8 +151,8 @@ def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
     df['tweet'] = df['tweet'].apply(text_cleanup_hate_speech) # preprocess the text in every tweet
     df = shuffle(df, random_state = 42) # randomly shuffle the dataset
     train_df, test_df = train_test_split(df, test_size = 0.2, random_state = 42) # split the dataset into training and testing sets
-    train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = 128, shuffle = True)
-    test_dataloader = DataLoader(HateSpeechDataset(test_df), batch_size = 128, shuffle = False)
+    train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = 16, shuffle = True)
+    test_dataloader = DataLoader(HateSpeechDataset(test_df), batch_size = 16, shuffle = False)
     return train_dataloader, test_dataloader
 
 if __name__=='__main__':
