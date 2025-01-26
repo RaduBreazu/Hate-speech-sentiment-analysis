@@ -69,6 +69,17 @@ class HateSpeechDataset(Dataset):
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
         return row['tweet'], row['class'] # on the dataset that we had before: row['Content'], row['Label']
+    
+
+class CombinedHSSent(Dataset):
+    def __init__(self,df_hate,df_sent):
+        self.hate = df_hate
+        self.sent = df_sent
+        self.true_len = min(len(self.hate),len(self.sent))
+    def __getitem__(self,idx):
+        return self.hate[idx],self.sent[idx]
+    def __len__(self):
+        return self.true_len
 
 def get_data_location():
     if os.getcwd() == '/kaggle/working':
@@ -76,7 +87,7 @@ def get_data_location():
     else:
         return './datasets'
 
-def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
+def load_sentiment_analysis_dataset(batch_size:int) -> Tuple[pd.DataFrame,pd.DataFrame]:
     DATA_LOCATION = get_data_location() + '/sentiment_analysis_dataset/'
     train_df = pd.DataFrame(columns = ['Content', 'Label'])
     for file in tqdm(os.listdir(DATA_LOCATION + 'train/pos'),desc="Train_pos_load"):
@@ -104,7 +115,7 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
     train_df['Content'] = train_df['Content'].apply(text_cleanup)
 
     test_df = pd.DataFrame(columns = ['Content', 'Label'])
-    for file in tqdm(os.listdir(DATA_LOCATION + 'test/pos'),desc="Test_pos_load"):
+    for i,file in tqdm(enumerate(os.listdir(DATA_LOCATION + 'test/pos')),desc="Test_pos_load"):
         with open(DATA_LOCATION + 'test/pos/' + file, 'r') as f:
             label = file.split('_')[1].split('.')[0]
             content = f.read()
@@ -115,7 +126,7 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
             if(detect(content)["lang"]=="en"):
                 test_df = pd.concat([test_df, pd.DataFrame([{'Content': content, 'Label': 1}])], ignore_index = True)
 
-    for file in tqdm(os.listdir(DATA_LOCATION + 'test/neg'),desc="Test_neg_load"):
+    for i,file in tqdm(enumerate(os.listdir(DATA_LOCATION + 'test/neg')),desc="Test_neg_load"):
         with open(DATA_LOCATION + 'test/neg/' + file, 'r') as f:
             label = file.split('_')[1].split('.')[0]
             content = f.read()
@@ -127,9 +138,11 @@ def load_sentiment_analysis_dataset() -> Tuple[pd.DataFrame,pd.DataFrame]:
                 test_df = pd.concat([test_df, pd.DataFrame([{'Content': content, 'Label': 0}])], ignore_index = True)
 
     test_df['Content'] = test_df['Content'].apply(text_cleanup)
-    train_loader = DataLoader(SentimentAnalysisDataset(train_df),batch_size=16,shuffle=True)
-    test_loader = DataLoader(SentimentAnalysisDataset(test_df),batch_size=16,shuffle=False)
-    return train_loader,test_loader
+    train_df = train_df.sample(frac=1.0,random_state=42)
+    test_df = test_df.sample(frac=1.0,random_state=42)
+    train_loader = DataLoader(SentimentAnalysisDataset(train_df),batch_size=batch_size,shuffle=True)
+    test_loader = DataLoader(SentimentAnalysisDataset(test_df),batch_size=batch_size,shuffle=False)
+    return SentimentAnalysisDataset(train_df),SentimentAnalysisDataset(test_df)
 
 """
 def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -144,16 +157,16 @@ def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
     return train_df,test_df
 """
 
-def load_hate_speech_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_hate_speech_dataset(batch_size:int) -> Tuple[pd.DataFrame, pd.DataFrame]:
     FILE = get_data_location() + '/hate_speech_dataset/data/labeled_data.csv'
     df = pd.read_csv(FILE)
     df = df.drop(columns = ['count', 'hate_speech', 'offensive_language', 'neither']).dropna().drop_duplicates()
     df['tweet'] = df['tweet'].apply(text_cleanup_hate_speech) # preprocess the text in every tweet
     df = shuffle(df, random_state = 42) # randomly shuffle the dataset
     train_df, test_df = train_test_split(df, test_size = 0.2, random_state = 42) # split the dataset into training and testing sets
-    train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = 16, shuffle = True)
-    test_dataloader = DataLoader(HateSpeechDataset(test_df), batch_size = 16, shuffle = False)
-    return train_dataloader, test_dataloader
+    train_dataloader = DataLoader(HateSpeechDataset(train_df), batch_size = batch_size, shuffle = True)
+    test_dataloader = DataLoader(HateSpeechDataset(test_df), batch_size = batch_size, shuffle = False)
+    return HateSpeechDataset(train_df),HateSpeechDataset(test_df)
 
 if __name__=='__main__':
     train_sent,test_sent = load_sentiment_analysis_dataset()
