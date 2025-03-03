@@ -12,7 +12,7 @@ from aim.pytorch_lightning import AimLogger
 import transformers
 from transformers import BertTokenizer, DistilBertModel
 
-from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
+from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score,BinaryAccuracy,BinaryF1Score
 
 from preprocess_data import load_sentiment_analysis_dataset,load_hate_speech_dataset
 
@@ -21,9 +21,9 @@ from preprocess_data import CombinedHSSent
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-acc_sent = MulticlassAccuracy(num_classes = 2).to(device)
+acc_sent = BinaryAccuracy().to(device)
 acc_hate = MulticlassAccuracy(num_classes = 3).to(device)
-f1_sent = MulticlassF1Score(num_classes = 2).to(device)
+f1_sent = BinaryF1Score().to(device)
 f1_hate = MulticlassF1Score(num_classes = 3).to(device)
 
 

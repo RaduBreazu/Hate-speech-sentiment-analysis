@@ -43,7 +43,7 @@ class BERTSeqClassif(nn.Module):
         return y_hat
 
 class BaselineModule(pl.LightningModule):
-    def __init__(self,num_labels,total_steps,lr,batch_size,warmup_steps,freeze_weights=False):
+    def __init__(self,num_labels,total_steps,lr,batch_size,warmup_steps,sch_type,freeze_weights=False):
         super().__init__()
         self.save_hyperparameters()
         self.BERT_seq_classif = BERTSeqClassif(num_labels,freeze_weights)
@@ -129,6 +129,6 @@ if __name__=='__main__':
     })
     csv_logger = pl.pytorch.loggers.csv_logs.CSVLogger(f"Baseline_{dataset_type}")
     checkpoint_callback = pl.pytorch.callbacks.ModelCheckpoint(dirpath=f"Baseline_Model_{dataset_type}_CKPT")
-    pl_model = BaselineModule(num_labels,len(trainLoader)* num_epochs,lr,batch_size,warmup_steps,freeze_weights=freeze_weights)
+    pl_model = BaselineModule(num_labels,len(trainLoader)* num_epochs,lr,batch_size,warmup_steps,sch_type,freeze_weights=freeze_weights)
     trainer = pl.Trainer(max_epochs=num_epochs,logger=[csv_logger,MTLlog],callbacks=[checkpoint_callback],precision="bf16")
     trainer.fit(pl_model,trainLoader,testLoader)
